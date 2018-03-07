@@ -13,29 +13,55 @@ function kvidb (opts) {
   const scope = `${dbname}-${name}`
   var IDB
   const makeDB = done => {
-    var openreq = indexedDB.open(dbname, version)
-    openreq.onerror = e => {
-      console.error(e.target.errorCode)
-      console.error(`[${dbname}] can't open database:`, openreq.error.name)
-    }
-    openreq.onupgradeneeded = () => openreq.result.createObjectStore(scope/*, dbopts*/)
-    openreq.onsuccess = () => done(IDB = openreq.result)
+    var idb = indexedDB.open(dbname, version)
+    idb.onerror = e => console.error(`[${dbname}]`, idb.error)
+    idb.onupgradeneeded = () => idb.result.createObjectStore(scope/*, dbopts*/)
+    idb.onsuccess = () => done(IDB = idb.result)
   }
   const use = (mode, done) => {
-    const next = (IDB, tx) => (tx = IDB.transaction([scope], mode), done(tx.objectStore(scope), tx))
+    const next = (IDB, tx) => (tx = IDB.transaction([scope], mode),
+      done(tx.objectStore(scope), tx))
     IDB ? next(IDB) : makeDB(next)
   }
-  const exec = (req, next) => {
-    req.onerror = () => next(req.error.name)
-    req.onsuccess = e => next(null, e.target.result)
-  }
-  return {
-    get: (key, done) => use('readonly', db => exec(db.get(key), done)),
-    put: (key, val, done) => use('readwrite', db => exec(db.put(val, key), e => done(e, !e))),
-    del: (key, done) => use('readwrite', db => exec(db.delete(key),  e => done(e, !e))),
-    clear: done => use('readwrite', db => exec(db.clear(), e => done(e, !e))),
-    length: done => use('readwrite', db => exec(db.count(), done)),
+  const api = {
+    get: (key, done) => use('readonly', (store, tx) => {
+      const req = store.get('' + key)
+      tx.oncomplete = e => next(req.error, req.result)
+      const next = (e, x) => {
+        e ? done(e) : x === undefined ? done(`key "${key}" is undefined`)
+        : done(null, x)
+      }
+    }),
+    put: (key, val, done) => val === undefined ? done('`value` is undefined')
+      : use('readwrite', (store, tx) => {
+        const req = store.put(val, '' + key)
+        tx.oncomplete = e => done(req.error, !req.error)
+    }),
+    del: (key, done) => api.get('' + key, (e, x) => {
+      e ? done(e) : use('readwrite', (store, tx) => {
+        const req = store.delete('' + key)
+        tx.oncomplete = e => done(req.error, !req.error)
+      })
+    }),
+    clear: done => use('readwrite',  (store, tx) => {
+      const req = store.clear()
+      tx.oncomplete = e => done(req.error, !req.error)
+    }),
+    length: done => use('readwrite',  (store, tx) => {
+      const req = store.count()
+      tx.oncomplete = e => done(req.error, req.result)
+    }),
     close: done => (IDB ? IDB.close() : makeDB(IDB => IDB.close()), done(null, true)),
+    batch: (ops, done) => done('@TODO: implement `.batch(...)`'),
+    keys: done => use('readonly', (store, tx, keys = []) => {
+      const openCursor = (store.openKeyCursor || store.openCursor)
+      const req = openCursor.call(store)
+      tx.oncomplete = e => done(req.error, req.error ? undefined : keys)
+      req.onsuccess = () => {
+        const x = req.result
+        if (x) (keys.push(x.key), x.continue())
+      }
+    })
     // key: (n, done) => (n < 0) ? done(null) : use('readonly', store => {
     //   var advanced = false
     //   var req = store.openCursor()
@@ -52,13 +78,8 @@ function kvidb (opts) {
     // This would be store.getAllKeys(), but it isn't supported by Edge or Safari.
     // And openKeyCursor isn't supported by Safari.
     // tx.oncomplete = () => done(null, keys)
-    keys: done => use('readonly', (db, tx, keys = []) => {
-      exec((db.openKeyCursor || db.openCursor).call(db), (err, result) => {
-        if (result) (keys.push(result.key), result.continue())
-        else done(null, keys)
-      })
-    })
   }
+  return api
 }
 
 },{}]},{},[1])(1)
