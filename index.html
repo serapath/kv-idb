@@ -6,40 +6,55 @@
   <body>
     <script src="bundle.js"></script>
     <script>
-      var defaultOpts = { /* mode: 'readwrite', name: 'store' */ }
-
-      var db = kvidb(defaultOpts)
-
-      var tests = [
-        next => db.clear(next),                  // true
-        next => db.put('foo', 'bar', next),      // true
-        next => db.put('null', {}, next),        // true
-        next => db.length(next),                 // 2
-        next => db.keys(next),                   // ['foo', 'null']
-        next => db.get('foo', next),             // 'bar'
-        next => db.clear(next),                  // true
-        next => db.get('foo', next),             // ERROR
-        next => db.put('foo', 'bar1', next),     // true
-        next => db.put('foo2', 'bar2', next),    // true
-        next => db.put('foo3', 'bar3', next),    // true
-        next => db.put('foo4', null, next),      // true
-        next => db.put('foo5', undefined, next), // ERROR
-        next => db.get('foo', next),             // 'bar1'
-        next => db.get('foo3', next),            // 'bar3'
-        next => db.del('foo3', next),            // true
-        next => db.get('foo3', next),            // ERROR
-        next => db.length(next),                 // 3
-        next => db.keys(next),                   // ['foo', 'foo2', 'foo4']
-      ]
-      function next () {
-        var test = tests.shift()
-        if (test) test((e, x) => {
-          console.log('' + test)
-          e ? console.error(e) : console.log(x)
-          next()
+      document.body.innerHTML = `<h1> test results: </h1>`
+      document.body.style = `font-family: mono;`
+      const source = document.currentScript.textContent
+      test()
+      async function test () {
+        var db = await kvidb()
+        const results = [
+          await db.clear(),                // true
+          await db.put('foo', 'bar'),      // true
+          await db.put('null', {}),        // true
+          await db.length(),               // 2
+          await db.keys(),                 // ["foo", "null"]
+          await db.get('foo'),             // "bar"
+          await db.clear(),                // true
+          await db.get('foo'),             // undefined
+          await db.put('foo', 'bar1'),     // true
+          await db.put('foo2', 'bar2'),    // true
+          await db.put('foo3', 'bar3'),    // true
+          await db.get('foo3'),            // "bar3"
+          await db.put('foo4', null),      // true
+          await db.get('foo4'),            // null
+          await db.put('foo5', undefined), // true
+          await db.get('foo5'),            // undefined
+          await db.get('foo'),             // "bar1"
+          await db.get('foo3'),            // "bar3"
+          await db.del('foo3'),            // true
+          await db.get('foo3'),            // undefined
+          await db.length(),               // 4
+          await db.keys(),                 // ["foo", "foo2", "foo4", "foo5"]
+        ]
+        var maxlen = 0
+        const tests = source.split('[\n')[1].split(' ]')[0].split('\n').slice(0, -1).map((line, i) => {
+          const [test, value] = line.split('//')
+          maxlen = Math.max(maxlen, value.length)
+          const assert = value.trim()
+          const expected = `${assert === "undefined" ? "undefined" : JSON.stringify(JSON.parse(assert))}`
+          const actual = `${JSON.stringify(results[i])}`
+          return [test, expected, actual]
+        })
+        const pass_console = result => [`%c${result}`, 'color: green']
+        const fail_console = result => [`%c${result}`, 'color: crimson']
+        const pass_browser = `green`
+        const fail_browser = `crimson`
+        tests.forEach(([code, expected, actual]) => {
+          const [test, s] = [expected === actual, code + `// expected: ${expected.padEnd(maxlen, ' ')}` + `actual: ${actual}`]
+          console.log(...test ? pass_console(s.trim()) : fail_console(s.trim()))
+          document.body.append(Object.assign(document.createElement('pre'), { textContent: s.trim(), style: `padding: 0; margin: 0; color: ${test ? pass_browser : fail_browser};` }))
         })
       }
-      next()
     </script>
   </body>
 </html>
